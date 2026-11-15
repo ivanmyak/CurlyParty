@@ -1,17 +1,10 @@
-﻿using DiscordCurlyBot.Interfaces;
+using System.Text.Json;
+using CurlyBot.DiscordBot.Interfaces;
 using GTranslate.Translators;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Newtonsoft.Json;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
-
-namespace DiscordCurlyBot.Services
+namespace CurlyBot.DiscordBot.Services
 {
     internal class TranslationService : ITranslate
     {
@@ -19,6 +12,7 @@ namespace DiscordCurlyBot.Services
         private readonly Dictionary<string, string> _cache = new();
         private readonly YandexTranslator _translator = new();
         private readonly ILogger<TranslationService> _logger;
+        private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
 
         public TranslationService(IHostEnvironment env, ILogger<TranslationService> logger)
         {
@@ -34,7 +28,7 @@ namespace DiscordCurlyBot.Services
                 try
                 {
                     var json = File.ReadAllText(_filePath);
-                    var loaded = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
+                    var loaded = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
                     if (loaded != null)
                         _cache = loaded;
                 }
@@ -55,7 +49,7 @@ namespace DiscordCurlyBot.Services
                 var result = await _translator.TranslateAsync(engName, "en", "ru");
                 _cache[engName] = result.Translation;
 
-                await File.WriteAllTextAsync(_filePath, JsonConvert.SerializeObject(_cache, Formatting.Indented));
+                await File.WriteAllTextAsync(_filePath, JsonSerializer.Serialize(_cache, JsonOptions));
                 return result.Translation;
             }
             catch (Exception ex)

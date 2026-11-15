@@ -1,9 +1,9 @@
-﻿using Discord.WebSocket;
+using Discord.WebSocket;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace DiscordCurlyBot.Interfaces
+namespace CurlyBot.DiscordBot.Interfaces
 {
     /// <summary>
     ///     Контракт сервиса шаблонов голосовых сообщений.

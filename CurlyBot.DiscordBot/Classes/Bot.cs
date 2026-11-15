@@ -1,7 +1,7 @@
-﻿using Discord;
+using Discord;
 using Discord.Commands;
 using Discord.WebSocket;
-using DiscordCurlyBot.Interfaces;
+using CurlyBot.DiscordBot.Interfaces;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -13,7 +13,7 @@ using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DiscordCurlyBot.Classes
+namespace CurlyBot.DiscordBot.Classes
 {
     internal class Bot : IBot
     {

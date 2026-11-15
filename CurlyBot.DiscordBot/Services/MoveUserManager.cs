@@ -1,8 +1,8 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
-using DiscordCurlyBot.Interfaces;
+using CurlyBot.DiscordBot.Interfaces;
 
-namespace DiscordCurlyBot.Services
+namespace CurlyBot.DiscordBot.Services
 {
     internal class MoveUserManager
     {

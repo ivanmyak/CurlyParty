@@ -1,18 +1,24 @@
-﻿using Discord;
+using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using DiscordCurlyBot.Services;
+using CurlyBot.DiscordBot.Services;
 using Microsoft.Extensions.Logging;
 
+/// <summary>Слеш-команды управления списком игнорирования авто-перемещений.</summary>
 public class IgnoreCommands : InteractionModuleBase<SocketInteractionContext>
 {
     private readonly ILogger<LoggingService> _logger;
 
+    /// <summary>Создаёт модуль команд игнорирования.</summary>
+    /// <param name="logger">Журнал бота.</param>
     public IgnoreCommands(ILogger<LoggingService> logger)
     {
         _logger = logger;
     }
 
+    /// <summary>Отключает авто-перемещения для себя или указанного пользователя.</summary>
+    /// <param name="target">Пользователь, которого нужно исключить; доступно администратору.</param>
+    /// <returns>Задача выполнения команды.</returns>
     [SlashCommand("ignore", "Отключает авто-перемещения для текущего пользователя или указанного (только для админов).")]
     public async Task IgnoreAsync(SocketGuildUser? target = null)
     {
@@ -45,6 +51,9 @@ public class IgnoreCommands : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
+    /// <summary>Включает авто-перемещения для себя или указанного пользователя.</summary>
+    /// <param name="target">Пользователь, которого нужно вернуть; доступно администратору.</param>
+    /// <returns>Задача выполнения команды.</returns>
     [SlashCommand("unignore", "Включает авто-перемещения для текущего пользователя или указанного (только для админов).")]
     public async Task UnignoreAsync(SocketGuildUser? target = null)
     {
@@ -75,6 +84,8 @@ public class IgnoreCommands : InteractionModuleBase<SocketInteractionContext>
         }
     }
 
+    /// <summary>Выводит список игнорируемых пользователей (только администратор).</summary>
+    /// <returns>Задача выполнения команды.</returns>
     [SlashCommand("listignored", "Выводит список всех пользователей, отключивших авто-перемещения.")]
     [RequireUserPermission(GuildPermission.Administrator)]
     public async Task ListIgnoredAsync()

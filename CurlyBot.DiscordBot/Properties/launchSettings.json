@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "CurlyBot.DiscordBot": {
+      "commandName": "Project"
+    },
+    "Container (Dockerfile)": {
+      "commandName": "Docker"
+    }
+  }
+}

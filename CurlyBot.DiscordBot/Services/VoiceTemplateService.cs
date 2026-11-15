@@ -1,11 +1,11 @@
-﻿using Discord.WebSocket;
-using DiscordCurlyBot.Interfaces;
+using Discord.WebSocket;
+using CurlyBot.DiscordBot.Interfaces;
 using Microsoft.Extensions.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace DiscordCurlyBot.Services
+namespace CurlyBot.DiscordBot.Services
 {
     internal class VoiceTemplateService : IVoiceTemplate
     {

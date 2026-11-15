@@ -1,4 +1,4 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
 using System;
 using System.Collections.Generic;
@@ -6,7 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace DiscordCurlyBot.Interfaces
+namespace CurlyBot.DiscordBot.Interfaces
 {
     /// <summary>
     ///     Контракт очереди голосовых задач.

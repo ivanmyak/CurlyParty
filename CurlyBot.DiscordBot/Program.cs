@@ -1,13 +1,15 @@
-﻿using Discord;
+using CurlyBot.Clients;
+using CurlyBot.Contracts;
+using CurlyBot.Contracts.Messaging;
+using CurlyBot.DiscordBot.Interfaces;
+using CurlyBot.DiscordBot.Services;
+using CurlyBot.Messaging;
+using Discord;
 using Discord.Interactions;
 using Discord.WebSocket;
-using DiscordCurlyBot.Interfaces;
-using DiscordCurlyBot.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using System.Diagnostics;
 using System.Reflection;
 using System.Runtime.InteropServices;
 
@@ -60,10 +62,28 @@ internal class Program
                 services.AddSingleton<DiscordSocketClient>();
                 services.AddSingleton(x => new InteractionService(x.GetRequiredService<DiscordSocketClient>()));
 
+                services.AddRabbitMqMessaging(context.Configuration);
+                services.AddIdentityServiceClient(context.Configuration);
+                services.AddSpeechSynthesisClient(
+                    context.Configuration,
+                    RabbitTopology.SpeechRepliesDiscordQueue);
+
+                services.AddRabbitMqConsumer<LinkConfirmationRequested, DiscordLinkEventsHandler>(
+                    RabbitTopology.LinkConfirmationQueue(Platforms.Discord),
+                    RabbitTopology.LinkConfirmationRoutingKey(Platforms.Discord));
+
+                services.AddRabbitMqConsumer<LinkResultNotification, DiscordLinkEventsHandler>(
+                    RabbitTopology.LinkResultQueue(Platforms.Discord),
+                    RabbitTopology.LinkResultRoutingKey(Platforms.Discord));
+
+                services.AddRabbitMqConsumer<SpeechDeliveryRequested, DiscordLinkEventsHandler>(
+                    RabbitTopology.DeliveryQueue(Platforms.Discord),
+                    RabbitTopology.DeliveryRoutingKey(Platforms.Discord));
+
                 services.AddSingleton<MoveUserManager>();
                 services.AddSingleton<LoggingService>();
+                services.AddSingleton<LinkInteractionHandler>();
 
-                services.AddHttpClient<ITTSGenerator, TTSGeneratorService>();
                 services.AddSingleton<ITranslate, TranslationService>();
                 services.AddSingleton<IVoiceQueue, VoiceQueueService>();
                 services.AddSingleton<IVoiceTemplate, VoiceTemplateService>();
@@ -81,6 +101,7 @@ internal class Program
         var client = host.Services.GetRequiredService<DiscordSocketClient>();
         var interactions = host.Services.GetRequiredService<InteractionService>();
         var config = host.Services.GetRequiredService<IConfiguration>();
+        var linkHandler = host.Services.GetRequiredService<LinkInteractionHandler>();
 
         host.Services.GetRequiredService<MoveUserManager>();
         host.Services.GetRequiredService<LoggingService>();
@@ -103,6 +124,13 @@ internal class Program
 
         client.InteractionCreated += async (interaction) =>
         {
+            if (interaction is SocketMessageComponent component &&
+                component.Data.CustomId.StartsWith("link:", StringComparison.Ordinal))
+            {
+                await linkHandler.HandleAsync(component);
+                return;
+            }
+
             var ctx = new SocketInteractionContext(client, interaction);
             await interactions.ExecuteCommandAsync(ctx, host.Services);
         };

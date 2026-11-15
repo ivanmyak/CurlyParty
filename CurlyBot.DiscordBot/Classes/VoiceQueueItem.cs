@@ -1,10 +1,10 @@
-﻿using Discord;
+using Discord;
 using Discord.WebSocket;
 using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace DiscordCurlyBot.Classes
+namespace CurlyBot.DiscordBot.Classes
 {
     internal class VoiceQueueItem
     {
