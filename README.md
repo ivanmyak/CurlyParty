@@ -171,8 +171,10 @@ Host=postgresdb;Port=5432;Database=curlypartydb;Username=curlyparty;Password=cur
 ### Discord
 
 - `/talk <text> [user] [is-personal-message] [is-in-current-service-only]` —
-  озвучить текст. Если `is-in-current-service-only=false`, копия уйдёт
-  связанному аккаунту в Telegram.
+  озвучить текст. Параметр `user` поддерживает автодополнение: сверху идут
+  участники текущего сервера, ниже — сохранённые аккаунты из базы связок
+  (Discord и Telegram) с отображаемыми именами. Если
+  `is-in-current-service-only=false`, копия уйдёт связанному аккаунту в Telegram.
 - `/linkme <@username|ссылка|ID>` — запросить связку с аккаунтом другого сервиса.
 - `/linkuser <@discord-user> <@username|ссылка|ID>` — связка администратором.
 - `/unlinkme`, `/unlinkuser`, `/linkstatus` — управление и просмотр связок.
@@ -200,7 +202,15 @@ Host=postgresdb;Port=5432;Database=curlypartydb;Username=curlyparty;Password=cur
    ограничена 30 минутами (администратор может связать напрямую).
 
 Учитываются только пользователи, которые когда-либо писали боту: их аккаунты
-автоматически сохраняются в IdentityService.
+автоматически сохраняются в IdentityService. Telegram не позволяет ботам
+инициировать переписку, поэтому для связки пользователь Telegram должен сам
+открыть бота и отправить `/start` — только после этого его `@username` попадёт
+в базу и станет доступен для поиска.
+
+Отображаемое имя хранится для каждой платформы отдельно в
+`platform_accounts.display_name`: для Discord — имя в профиле или на сервере,
+для Telegram — имя и фамилия из профиля. Оба имени видны в `/linkstatus`, в
+подсказках `/talk` и в уведомлениях о связке.
 
 ## Локальная разработка
 

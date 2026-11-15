@@ -474,9 +474,15 @@ public sealed class TelegramCommandHandler(
             return;
         }
 
-        var lines = profile.LinkedAccounts.Select(x =>
+        var own = profile.Account;
+        var lines = new List<string>
+        {
+            $"- {Platforms.DisplayName(own.Platform)}: {own.DisplayName} (@{own.Username}) — текущий аккаунт" +
+            (own.DmBlocked ? " — недоступен" : string.Empty)
+        };
+        lines.AddRange(profile.LinkedAccounts.Select(x =>
             $"- {Platforms.DisplayName(x.Platform)}: {x.DisplayName} (@{x.Username})" +
-            (x.DmBlocked ? " — недоступен" : string.Empty));
+            (x.DmBlocked ? " — недоступен" : string.Empty)));
 
         await ReplyAsync(
             message,

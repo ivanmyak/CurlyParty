@@ -194,9 +194,15 @@ namespace CurlyBot.DiscordBot.Commands
                     return;
                 }
 
-                var lines = profile.LinkedAccounts.Select(x =>
+                var own = profile.Account;
+                var lines = new List<string>
+                {
+                    $"- {Platforms.DisplayName(own.Platform)}: **{own.DisplayName}** (@{own.Username}) — текущий аккаунт" +
+                    (own.DmBlocked ? " — ЛС закрыты" : string.Empty)
+                };
+                lines.AddRange(profile.LinkedAccounts.Select(x =>
                     $"- {Platforms.DisplayName(x.Platform)}: **{x.DisplayName}** (@{x.Username})" +
-                    (x.DmBlocked ? " — ЛС закрыты" : string.Empty));
+                    (x.DmBlocked ? " — ЛС закрыты" : string.Empty)));
 
                 await RespondAsync(
                     $"**Связки {target.DisplayName}:**\n{string.Join("\n", lines)}",

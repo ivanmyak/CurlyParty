@@ -68,7 +68,9 @@ namespace CurlyBot.DiscordBot.Commands
         [SlashCommand("talk", "Озвучить текст голосом бота")]
         public async Task TalkAsync(
             [Summary("text", "Текст для озвучки")] string text,
-            [Summary("user", "Discord-пользователь, @username из базы или @telegram-аккаунт (необязательно)")] string? user = null,
+            [Summary("user", "Discord-пользователь, @username из базы или @telegram-аккаунт (необязательно)")]
+            [Autocomplete(typeof(TalkAutocompleteHandler))]
+            string? user = null,
             [Summary("is-personal-message", "Отправить сразу в личку (true) или пытаться в голосовой (false)")] bool isPersonalMessage = false,
             [Summary("is-in-current-service-only", "true — только Discord; false — дополнительно связанному аккаунту в Telegram")] bool isInCurrentServiceOnly = true)
         {
@@ -354,6 +356,31 @@ namespace CurlyBot.DiscordBot.Commands
 
         private async Task<(AccountDto? Account, string? Error)> ResolveGuildMemberAsync(string query)
         {
+            var parsed = AccountQuery.Parse(Platforms.Discord, query);
+
+            // Значение из автодополнения: discord:<id>. Участник мог ещё не писать боту,
+            // поэтому регистрируем его в IdentityService по данным Discord.
+            if (parsed.Platform == Platforms.Discord &&
+                parsed.Kind == AccountQueryKind.ExternalId &&
+                ulong.TryParse(parsed.Value, out var userId))
+            {
+                var byId = Context.Guild.GetUser(userId)
+                           ?? await Context.Client.GetUserAsync(
+                               userId,
+                               new RequestOptions { RetryMode = RetryMode.AlwaysRetry }) as SocketUser;
+
+                if (byId is null)
+                    return (null, null);
+
+                var byIdAccount = await _identity.UpsertAccountAsync(
+                    Platforms.Discord,
+                    byId.Id.ToString(),
+                    byId.Username,
+                    (byId as SocketGuildUser)?.DisplayName ?? byId.GlobalName ?? byId.Username);
+
+                return (byIdAccount, null);
+            }
+
             var normalized = AccountQuery.NormalizeUsername(query);
 
             var matches = Context.Guild.Users
