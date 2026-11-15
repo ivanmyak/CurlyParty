@@ -51,7 +51,8 @@ public static partial class AccountQuery
 
     /// <summary>
     ///     Приводит никнейм к виду, пригодному для поиска: убирает пробелы по краям,
-    ///     ведущий символ «@» и переводит в нижний регистр.
+    ///     ведущий символ «@», переводит в нижний регистр и заменяет «ё» на «е»,
+    ///     чтобы «Пётр» находился по запросу «петр».
     /// </summary>
     /// <param name="value">Исходный никнейм; допускает null.</param>
     /// <returns>Нормализованный никнейм в нижнем регистре.</returns>
@@ -60,7 +61,7 @@ public static partial class AccountQuery
         var result = (value ?? string.Empty).Trim();
         if (result.StartsWith('@'))
             result = result[1..];
-        return result.ToLowerInvariant();
+        return result.ToLowerInvariant().Replace('ё', 'е');
     }
 
     /// <summary>

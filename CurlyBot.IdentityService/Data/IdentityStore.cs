@@ -69,7 +69,7 @@ public sealed class IdentityStore(NpgsqlDataSource dataSource, ILogger<IdentityS
         command.Parameters.AddWithValue("username", username);
         command.Parameters.AddWithValue("username_norm", AccountQuery.NormalizeUsername(username));
         command.Parameters.AddWithValue("display_name", displayName);
-        command.Parameters.AddWithValue("display_name_norm", displayName.ToLowerInvariant());
+        command.Parameters.AddWithValue("display_name_norm", AccountQuery.NormalizeUsername(displayName));
 
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);
         await reader.ReadAsync(cancellationToken);
@@ -166,8 +166,9 @@ public sealed class IdentityStore(NpgsqlDataSource dataSource, ILogger<IdentityS
                SELECT {AccountColumns}
                FROM platform_accounts
                WHERE platform = @platform
-                 AND (username_normalized = @value OR display_name_normalized = @value)
-               ORDER BY CASE WHEN username_normalized = @value THEN 0 ELSE 1 END, display_name
+                 AND (translate(username_normalized, 'ё', 'е') = @value
+                      OR translate(display_name_normalized, 'ё', 'е') = @value)
+               ORDER BY CASE WHEN translate(username_normalized, 'ё', 'е') = @value THEN 0 ELSE 1 END, display_name
                LIMIT 25;
                """;
 
@@ -175,6 +176,56 @@ public sealed class IdentityStore(NpgsqlDataSource dataSource, ILogger<IdentityS
         await using var command = new NpgsqlCommand(sql, connection);
         command.Parameters.AddWithValue("platform", Contracts.Platforms.Normalize(platform));
         command.Parameters.AddWithValue("value", query.Value);
+
+        var result = new List<AccountRecord>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+            result.Add(MapAccount(reader));
+
+        return result;
+    }
+
+    /// <summary>
+    ///     Возвращает подсказки аккаунтов для автодополнения: при пустом запросе —
+    ///     недавние контакты, иначе совпадения по нику и отображаемому имени.
+    /// </summary>
+    /// <param name="query">Введённый пользователем текст; пустая строка означает «недавние контакты».</param>
+    /// <param name="limit">Максимальное количество подсказок (от 1 до 25).</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Аккаунты, упорядоченные от наиболее подходящих к менее подходящим.</returns>
+    public async Task<IReadOnlyList<AccountRecord>> SuggestAccountsAsync(
+        string? query,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        var normalized = AccountQuery.NormalizeUsername(query);
+        limit = Math.Clamp(limit, 1, 25);
+
+        var sql = $"""
+            SELECT {AccountColumns}
+            FROM platform_accounts
+            WHERE @query = ''
+               OR translate(username_normalized, 'ё', 'е') LIKE @query || '%'
+               OR translate(display_name_normalized, 'ё', 'е') LIKE @query || '%'
+               OR translate(display_name_normalized, 'ё', 'е') LIKE '%' || @query || '%'
+            ORDER BY
+                CASE
+                    WHEN @query = '' THEN 0
+                    WHEN translate(username_normalized, 'ё', 'е') = @query
+                         OR translate(display_name_normalized, 'ё', 'е') = @query THEN 0
+                    WHEN translate(username_normalized, 'ё', 'е') LIKE @query || '%'
+                         OR translate(display_name_normalized, 'ё', 'е') LIKE @query || '%' THEN 1
+                    ELSE 2
+                END,
+                last_contact_at DESC NULLS LAST,
+                display_name
+            LIMIT @limit;
+            """;
+
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("query", normalized);
+        command.Parameters.AddWithValue("limit", limit);
 
         var result = new List<AccountRecord>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken);

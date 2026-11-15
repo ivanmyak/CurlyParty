@@ -105,6 +105,21 @@ public sealed class IdentityServiceClient
         return await ReadAsync<FindAccountsResponse>(response, cancellationToken);
     }
 
+    /// <summary>Возвращает подсказки аккаунтов для автодополнения команд.</summary>
+    /// <param name="query">Введённый пользователем текст; пустая строка означает «недавние контакты».</param>
+    /// <param name="limit">Максимальное количество подсказок.</param>
+    /// <param name="cancellationToken">Токен отмены запроса.</param>
+    /// <returns>Аккаунты, подходящие для подсказки, от наиболее подходящих к менее подходящим.</returns>
+    public async Task<IReadOnlyList<AccountDto>> SuggestAccountsAsync(
+        string? query,
+        int limit = 25,
+        CancellationToken cancellationToken = default)
+    {
+        var url = $"api/accounts/suggest?query={Uri.EscapeDataString(query ?? string.Empty)}&limit={limit}";
+        using var response = await _http.GetAsync(url, cancellationToken);
+        return await ReadAsync<AccountDto[]>(response, cancellationToken);
+    }
+
     /// <summary>Загружает профиль аккаунта вместе со сведениями о связках.</summary>
     /// <param name="platform">Имя платформы.</param>
     /// <param name="externalId">Идентификатор пользователя внутри платформы.</param>

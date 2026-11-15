@@ -60,6 +60,16 @@ app.MapPost("/api/accounts/blocked", async (
     return Results.NoContent();
 });
 
+app.MapGet("/api/accounts/suggest", async (
+    string? query,
+    int? limit,
+    IdentityStore store,
+    CancellationToken cancellationToken) =>
+{
+    var accounts = await store.SuggestAccountsAsync(query, limit ?? 25, cancellationToken);
+    return Results.Ok(accounts.Select(x => x.ToDto()).ToArray());
+});
+
 app.MapGet("/api/accounts/find", async (
     string query,
     LinkService links,

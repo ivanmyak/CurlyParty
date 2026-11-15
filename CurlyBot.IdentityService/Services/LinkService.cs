@@ -72,8 +72,7 @@ public sealed class LinkService(
             return new CreateLinkResult(
                 null,
                 LinkStatuses.NotFound,
-                $"Аккаунт в {Platforms.DisplayName(targetPlatform)} не найден. " +
-                "Пользователь должен сначала запустить бота (/start в Telegram) и проверить @username или ссылку на профиль.",
+                TargetNotFoundMessage(targetPlatform),
                 null,
                 null);
         }
@@ -341,7 +340,7 @@ public sealed class LinkService(
         {
             return new RespondLinkResult(
                 LinkStatuses.NotFound,
-                $"Аккаунт в {Platforms.DisplayName(targetPlatform)} не найден.",
+                TargetNotFoundMessage(targetPlatform),
                 source.ToDto(),
                 null);
         }
@@ -437,6 +436,14 @@ public sealed class LinkService(
                 accepted,
                 reason),
             cancellationToken);
+
+    private static string TargetNotFoundMessage(string platform)
+        => Platforms.Normalize(platform) == Platforms.Telegram
+            ? "Аккаунт в Telegram не найден. Telegram не позволяет ботам писать первыми: " +
+              "пользователь должен сам открыть бота и отправить /start, после этого его @username появится в базе. " +
+              "Проверьте @username или ссылку на профиль."
+            : "Аккаунт в Discord не найден. Пользователь должен сначала написать боту в Discord. " +
+              "Проверьте @username или ссылку на профиль.";
 
     private static string StatusMessage(string status)
         => status switch
