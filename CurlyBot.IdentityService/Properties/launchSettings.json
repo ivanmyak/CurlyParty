@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "CurlyBot.IdentityService": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:60495;http://localhost:60496"
+    }
+  }
+}
