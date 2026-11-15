@@ -37,7 +37,12 @@ Telegram ─┘                  │
 
 ## Быстрый запуск
 
-1. Заполните `env.env`:
+1. Скопируйте шаблон и заполните токены:
+
+   ```powershell
+   Copy-Item env.example env.env
+   ```
+
    - `DiscordToken` — токен Discord-бота;
    - `TelegramToken` — токен Telegram-бота;
    - при необходимости `Telegram__AdminUserIds__0` — Telegram ID администратора.
@@ -47,6 +52,12 @@ Telegram ─┘                  │
 
 3. Запустите:
 
+```powershell
+scripts\compose-up.ps1            # основной оркестр
+```
+
+или напрямую:
+
 ```bash
 docker compose up --build
 ```
@@ -55,14 +66,89 @@ docker compose up --build
 
 | Сервис | Адрес |
 | --- | --- |
-| RabbitMQ Management | http://localhost:15672 (`curlybot` / `curlybot_dev`) |
+| RabbitMQ Management | http://localhost:15672 (`curlyparty` / `curlyparty_dev`) |
 | IdentityService | http://localhost:8081/health |
 | SpeechService | http://localhost:8082/health |
-| PostgreSQL | `localhost:5432` (`curlybot` / `curlybot_dev`) |
+| PostgreSQL | `localhost:5432` (`curlyparty` / `curlyparty_dev`) |
+
+## Оркестрация: основной и дебаговый варианты
+
+В репозитории два взаимоисключающих compose-файла:
+
+| Файл | Проект | Назначение |
+| --- | --- | --- |
+| `docker-compose.yml` | `curlyparty` | Самодостаточный вариант для клонирования: RabbitMQ, локальный PostgreSQL, `identity`, `speech`, боты и `piper-http`. |
+| `docker-compose.debug.yml` | `curlyparty-debug` | Локальный дебаг: без локального PostgreSQL — `identity` ходит во внешнюю БД `postgresdb` через сеть `shared-net`; `piper-http` не публикует порт 5000. |
+
+Правила:
+
+- основной оркестр главнее: его запуск автоматически останавливает дебаговый;
+- если поднят основной, дебаговый не стартует и сообщает:
+  «Поднят основной оркестр. Для поднятия дебага — остановите основу»;
+- у оркестров одинаковые `container_name`, поэтому одновременно они работать
+  не могут.
+
+Скрипт `scripts/compose-up.ps1` реализует эти правила и проверяет занятость
+портов 5432 и 5000 перед запуском основного варианта:
+
+```powershell
+scripts\compose-up.ps1                     # поднять основной оркестр
+scripts\compose-up.ps1 -Mode debug         # поднять дебаговый оркестр
+scripts\compose-up.ps1 -Mode main -Down    # остановить основной оркестр
+scripts\compose-up.ps1 -Mode debug -Down   # остановить дебаговый оркестр
+
+scripts\compose-up.ps1 -NoBuild            # без пересборки образов
+scripts\compose-up.ps1 -Force              # без проверки портов
+```
+
+Эквивалентные команды без скрипта:
+
+```bash
+docker compose -f docker-compose.yml up -d --build
+docker compose -f docker-compose.debug.yml up -d --build
+docker compose -f docker-compose.debug.yml down --remove-orphans
+```
+
+## Подготовка внешнего PostgreSQL (дебаговый режим)
+
+Дебаговый оркестр использует `postgresdb` из стека `docker-compose.database.yml`
+(файл лежит вне репозитория и не изменяется). В нём нужно один раз создать роль,
+базу и выдать привилегии — скрипты лежат в `scripts/sql`:
+
+| Скрипт | Где выполнять | Что делает |
+| --- | --- | --- |
+| `scripts/sql/01-create-role.sql` | база `postgres` | создаёт роль `curlyparty` с паролем `curlyparty_dev` |
+| `scripts/sql/02-create-database.sql` | база `postgres` | создаёт базу `curlypartydb` с владельцем `curlyparty` |
+| `scripts/sql/03-grant-privileges.sql` | база `curlypartydb` | выдаёт права на схему `public` |
+
+Через Adminer (`http://localhost:9090`):
+
+1. Войдите администратором PostgreSQL (`SuperAdmiral`).
+2. Выберите базу `postgres` и выполните по очереди `01-create-role.sql`
+   и `02-create-database.sql`.
+3. Переключитесь на базу `curlypartydb` и выполните `03-grant-privileges.sql`.
+
+Через `psql` в контейнере:
+
+```powershell
+docker exec -i postgresdb-container psql -U SuperAdmiral -d postgres < scripts/sql/01-create-role.sql
+docker exec -i postgresdb-container psql -U SuperAdmiral -d postgres < scripts/sql/02-create-database.sql
+docker exec -i postgresdb-container psql -U SuperAdmiral -d curlypartydb < scripts/sql/03-grant-privileges.sql
+```
+
+Параметры подключения задаются переменными `CURLYPARTY_DB_*` (см.
+`env.example`). Значения по умолчанию в `docker-compose.debug.yml`:
+
+```
+Host=postgresdb;Port=5432;Database=curlypartydb;Username=curlyparty;Password=curlyparty_dev
+```
+
+Таблицы создаёт сам `IdentityService` при старте (`CREATE TABLE IF NOT EXISTS`).
 
 ## Переменные окружения
 
-Основные настройки задаются через `env.env` или переменные окружения.
+Основные настройки задаются через `env.env` (шаблон — `env.example`) или
+переменные окружения.
 
 | Переменная | Описание |
 | --- | --- |
@@ -71,6 +157,8 @@ docker compose up --build
 | `Telegram__AdminUserIds__0`, `...__1` | Telegram ID администраторов |
 | `IdentityService__BaseUrl` | Адрес IdentityService (в compose — `http://identity:8080`) |
 | `ConnectionStrings__Postgres` | Строка подключения PostgreSQL |
+| `CURLYPARTY_DB_HOST`, `CURLYPARTY_DB_PORT` | Внешняя БД для дебагового оркестра (по умолчанию `postgresdb:5432`) |
+| `CURLYPARTY_DB_NAME`, `CURLYPARTY_DB_USER`, `CURLYPARTY_DB_PASSWORD` | База, роль и пароль внешней БД (по умолчанию `curlypartydb`, `curlyparty`, `curlyparty_dev`) |
 | `RabbitMq__Host`, `RabbitMq__Port` | Подключение к RabbitMQ |
 | `RabbitMq__UserName`, `RabbitMq__Password` | Учётные данные RabbitMQ |
 | `Speech__EngineUrl` | Адрес piper-http (в compose — `http://tts:5000`) |
@@ -134,3 +222,6 @@ Infrastructure (RabbitMQ, PostgreSQL, piper) удобнее поднять че�
 ```bash
 docker compose up rabbitmq postgres tts
 ```
+
+Для запуска на внешней БД без локального PostgreSQL используйте дебаговый
+оркестр (см. раздел «Оркестрация»).

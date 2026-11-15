@@ -1,0 +1,145 @@
+# Дебаговая оркестрация CurlyParty.
+#
+# Отличия от основного docker-compose.yml:
+#   * нет локального PostgreSQL — используется внешний `postgresdb`
+#     (стек docker-compose.database.yml, сеть shared-net);
+#   * сервис identity подключён к внешней сети shared-net;
+#   * у piper-http (tts) не публикуется порт 5000 — он нужен только внутри сети;
+#   * нет тома postgres-data.
+#
+# Запуск: scripts/compose-up.ps1 -Mode debug
+# Основной и дебаговый оркестры взаимоисключающие (одинаковые container_name).
+name: curlyparty-debug
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: curlyparty-rabbitmq-container
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: curlyparty
+      RABBITMQ_DEFAULT_PASS: curlyparty_dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  identity:
+    container_name: curlyparty-identity-container
+    image: ${DOCKER_REGISTRY-}curlyparty-identity
+    build:
+      context: .
+      dockerfile: CurlyBot.IdentityService/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: Host=${CURLYPARTY_DB_HOST:-postgresdb};Port=${CURLYPARTY_DB_PORT:-5432};Database=${CURLYPARTY_DB_NAME:-curlypartydb};Username=${CURLYPARTY_DB_USER:-curlyparty};Password=${CURLYPARTY_DB_PASSWORD:-curlyparty_dev}
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlyparty
+      RabbitMq__Password: curlyparty_dev
+    ports:
+      - "8081:8080"
+    networks:
+      - default
+      - shared-net
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  speech:
+    container_name: curlyparty-speech-container
+    image: ${DOCKER_REGISTRY-}curlyparty-speech
+    build:
+      context: .
+      dockerfile: CurlyBot.SpeechService/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Speech__EngineUrl: http://tts:5000
+      Speech__OutputPath: /data/tts
+      Speech__VoiceModel: ru_RU-denis-medium.onnx
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlyparty
+      RabbitMq__Password: curlyparty_dev
+    ports:
+      - "8082:8080"
+    volumes:
+      - tts-data:/data/tts
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      tts:
+        condition: service_started
+
+  discord-bot:
+    container_name: curlyparty-discord-container
+    image: ${DOCKER_REGISTRY-}curlyparty-discord
+    build:
+      context: .
+      dockerfile: CurlyBot.DiscordBot/Dockerfile
+    env_file: "env.env"
+    restart: unless-stopped
+    environment:
+      IdentityService__BaseUrl: http://identity:8080
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlyparty
+      RabbitMq__Password: curlyparty_dev
+    volumes:
+      - tts-data:/data/tts
+      - ./CurlyBot.DiscordBot/Data:/app/Data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      identity:
+        condition: service_started
+      speech:
+        condition: service_started
+
+  telegram-bot:
+    container_name: curlyparty-telegram-container
+    image: ${DOCKER_REGISTRY-}curlyparty-telegram
+    build:
+      context: .
+      dockerfile: CurlyBot.TelegramBot/Dockerfile
+    env_file: "env.env"
+    restart: unless-stopped
+    environment:
+      IdentityService__BaseUrl: http://identity:8080
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlyparty
+      RabbitMq__Password: curlyparty_dev
+    volumes:
+      - tts-data:/data/tts
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      identity:
+        condition: service_started
+      speech:
+        condition: service_started
+
+  tts:
+    container_name: curlyparty-tts-container
+    image: artibex/piper-http
+    restart: unless-stopped
+    volumes:
+      - ./models/tts-models:/app/models
+
+networks:
+  shared-net:
+    external: true
+
+volumes:
+  rabbitmq-data:
+  tts-data:
