@@ -1,26 +1,151 @@
-name: curlybot-compose-dev
+name: curlyparty
+
 services:
-  discordcurlybot-dev:
-    container_name: curlybot-container-dev
-    image: ${DOCKER_REGISTRY-}curlybot-image-dev
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: curlybot-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: curlybot
+      RABBITMQ_DEFAULT_PASS: curlybot_dev
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: curlybot-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: curlybot
+      POSTGRES_USER: curlybot
+      POSTGRES_PASSWORD: curlybot_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U curlybot -d curlybot"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  identity:
+    container_name: curlybot-identity
+    image: ${DOCKER_REGISTRY-}curlybot-identity
     build:
       context: .
-      dockerfile: DiscordCurlyBot/Dockerfile
+      dockerfile: CurlyBot.IdentityService/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__Postgres: Host=postgres;Port=5432;Database=curlybot;Username=curlybot;Password=curlybot_dev
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlybot
+      RabbitMq__Password: curlybot_dev
+    ports:
+      - "8081:8080"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  speech:
+    container_name: curlybot-speech
+    image: ${DOCKER_REGISTRY-}curlybot-speech
+    build:
+      context: .
+      dockerfile: CurlyBot.SpeechService/Dockerfile
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      Speech__EngineUrl: http://tts:5000
+      Speech__OutputPath: /data/tts
+      Speech__VoiceModel: ru_RU-denis-medium.onnx
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlybot
+      RabbitMq__Password: curlybot_dev
+    ports:
+      - "8082:8080"
+    volumes:
+      - tts-data:/data/tts
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      tts:
+        condition: service_started
+
+  discord-bot:
+    container_name: curlybot-discord
+    image: ${DOCKER_REGISTRY-}curlybot-discord
+    build:
+      context: .
+      dockerfile: CurlyBot.DiscordBot/Dockerfile
     env_file: "env.env"
     restart: unless-stopped
     environment:
-      - TTS_ENDPOINT=http://ttscurlybot-dev:5000  # Имя сервиса 'ttscurlybot' доступно внутри сети докера
+      IdentityService__BaseUrl: http://identity:8080
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlybot
+      RabbitMq__Password: curlybot_dev
     volumes:
-      - ./DiscordCurlyBot/Data:/app/Data
+      - tts-data:/data/tts
+      - ./CurlyBot.DiscordBot/Data:/app/Data
     depends_on:
-      - ttscurlybot-dev
+      rabbitmq:
+        condition: service_healthy
+      identity:
+        condition: service_started
+      speech:
+        condition: service_started
 
-  ttscurlybot-dev:
-    image: artibex/piper-http # Образ с озвучиванием
-    container_name: ttscurlybot-container-dev
-#    command: --voice ru_RU-denis-medium 
-#    command: ["--voice", "/app/models/ru_RU-denis-medium.onnx"] 
+  telegram-bot:
+    container_name: curlybot-telegram
+    image: ${DOCKER_REGISTRY-}curlybot-telegram
+    build:
+      context: .
+      dockerfile: CurlyBot.TelegramBot/Dockerfile
+    env_file: "env.env"
+    restart: unless-stopped
+    environment:
+      IdentityService__BaseUrl: http://identity:8080
+      RabbitMq__Host: rabbitmq
+      RabbitMq__Port: "5672"
+      RabbitMq__UserName: curlybot
+      RabbitMq__Password: curlybot_dev
     volumes:
-      - ./models/tts-models:/app/models  # Папка с .onnx моделями на хосте
+      - tts-data:/data/tts
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      identity:
+        condition: service_started
+      speech:
+        condition: service_started
+
+  tts:
+    container_name: curlybot-tts
+    image: artibex/piper-http
+    restart: unless-stopped
+    volumes:
+      - ./models/tts-models:/app/models
     ports:
       - "5000:5000"
+
+volumes:
+  rabbitmq-data:
+  postgres-data:
+  tts-data:

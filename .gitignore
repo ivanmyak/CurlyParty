@@ -364,6 +364,9 @@ FodyWeavers.xsd
 /env.env
 /docker-compose.deploy.yml
 /models
-/DiscordCurlyBot/Data/tracking.json
-/DiscordCurlyBot/appsettings.Development.json
-/DiscordCurlyBot/Data/tts-records
+/CurlyBot.DiscordBot/Data/tracking.json
+/CurlyBot.DiscordBot/appsettings.Development.json
+/CurlyBot.DiscordBot/Data/tts-records
+/CurlyBot.DiscordBot/Data/activity_mapping.json
+/CurlyBot.SpeechService/data
+/CurlyBot.TelegramBot/appsettings.Development.json
