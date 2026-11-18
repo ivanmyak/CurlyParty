@@ -30,8 +30,9 @@
     Не проверять занятость портов 5432 и 5000 перед запуском основного оркестра.
 
 .PARAMETER EnvFile
-    Файл с переменными для интерполяции compose. По умолчанию `env.env`,
-    если он существует.
+    Файл с переменными для интерполяции compose. Если не указан, для основного
+    оркестра используется `env.env`, для дебагового — `debug.env`, а при его
+    отсутствии `env.env`.
 
 .EXAMPLE
     scripts\compose-up.ps1
@@ -56,7 +57,7 @@ param(
 
     [switch]$Force,
 
-    [string]$EnvFile = 'env.env'
+    [string]$EnvFile
 )
 
 Set-StrictMode -Version Latest
@@ -77,14 +78,16 @@ Set-Location $repoRoot
 
 $orchestrations = @{
     main  = @{
-        File    = 'docker-compose.yml'
-        Project = 'curlyparty'
-        Title   = 'основной оркестр'
+        File         = 'docker-compose.yml'
+        Project      = 'curlyparty'
+        Title        = 'основной оркестр'
+        EnvFileOrder = @('env.env')
     }
     debug = @{
-        File    = 'docker-compose.debug.yml'
-        Project = 'curlyparty-debug'
-        Title   = 'дебаговый оркестр'
+        File         = 'docker-compose.debug.yml'
+        Project      = 'curlyparty-debug'
+        Title        = 'дебаговый оркестр'
+        EnvFileOrder = @('debug.env', 'env.env')
     }
 }
 
@@ -145,8 +148,18 @@ function Invoke-Compose {
 }
 
 $composeBase = @('compose')
-if ($EnvFile -and (Test-Path $EnvFile)) {
-    $composeBase += @('--env-file', $EnvFile)
+
+# Порядок выбора env-файла: явный -EnvFile, затем значения по режиму.
+$envFileCandidates = if ($PSBoundParameters.ContainsKey('EnvFile')) { @($EnvFile) } else { $current.EnvFileOrder }
+$resolvedEnvFile = $envFileCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+
+if (-not $resolvedEnvFile -and $PSBoundParameters.ContainsKey('EnvFile')) {
+    Write-Host "Файл переменных '$EnvFile' не найден — compose будет использовать значения по умолчанию." -ForegroundColor Yellow
+}
+
+if ($resolvedEnvFile) {
+    Write-Host "Файл переменных: $resolvedEnvFile" -ForegroundColor DarkGray
+    $composeBase += @('--env-file', $resolvedEnvFile)
 }
 
 # --- Остановка выбранного оркестра -------------------------------------------
@@ -199,9 +212,26 @@ if ($Mode -eq 'main' -and -not $Force) {
 }
 
 # --- Запуск ------------------------------------------------------------------
-$composeArguments = $composeBase + @('-f', $current.File, '-p', $current.Project, 'up', '-d')
+# Образы всегда пересобираются по актуальным исходникам, контейнеры
+# пересоздаются принудительно — иначе Docker может оставить старый контейнер
+# с прежним кодом и старыми bind-монтированиями.
+$composeArguments = $composeBase + @(
+    '-f', $current.File,
+    '-p', $current.Project,
+    'up', '-d',
+    '--force-recreate',
+    '--remove-orphans'
+)
 if (-not $NoBuild) {
     $composeArguments += '--build'
+}
+
+if ($Mode -eq 'debug') {
+    # Bind-монтирование требует существующего каталога на хосте.
+    $ttsRecords = Join-Path $repoRoot 'CurlyBot.DiscordBot/Data/tts-records'
+    if (-not (Test-Path $ttsRecords)) {
+        New-Item -ItemType Directory -Path $ttsRecords -Force | Out-Null
+    }
 }
 
 Write-Host "Поднимаю $($current.Title) ($($current.Project))..." -ForegroundColor Cyan

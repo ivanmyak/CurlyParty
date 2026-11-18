@@ -22,6 +22,7 @@
 **/secrets.dev.yaml
 **/values.dev.yaml
 **/env.env
+/CurlyBot.DiscordBot/Data/tts-records
 /models
 /lavalink
 LICENSE

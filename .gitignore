@@ -362,6 +362,7 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 /env.env
+/debug.env
 /docker-compose.deploy.yml
 /models
 /CurlyBot.DiscordBot/Data/tracking.json

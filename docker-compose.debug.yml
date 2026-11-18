@@ -5,7 +5,10 @@
 #     (стек docker-compose.database.yml, сеть shared-net);
 #   * сервис identity подключён к внешней сети shared-net;
 #   * у piper-http (tts) не публикуется порт 5000 — он нужен только внутри сети;
-#   * нет тома postgres-data.
+#   * нет тома postgres-data;
+#   * данные Discord-бота (`Data`) и кэш озвучки (`tts-records`) — это
+#     bind-монтирования локальных каталогов, а не именованные тома:
+#     сгенерированные файлы сразу видны в репозитории.
 #
 # Запуск: scripts/compose-up.ps1 -Mode debug
 # Основной и дебаговый оркестры взаимоисключающие (одинаковые container_name).
@@ -73,7 +76,7 @@ services:
     ports:
       - "8082:8080"
     volumes:
-      - tts-data:/data/tts
+      - ./CurlyBot.DiscordBot/Data/tts-records:/data/tts
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -95,7 +98,7 @@ services:
       RabbitMq__UserName: curlyparty
       RabbitMq__Password: curlyparty_dev
     volumes:
-      - tts-data:/data/tts
+      - ./CurlyBot.DiscordBot/Data/tts-records:/data/tts
       - ./CurlyBot.DiscordBot/Data:/app/Data
     depends_on:
       rabbitmq:
@@ -120,7 +123,7 @@ services:
       RabbitMq__UserName: curlyparty
       RabbitMq__Password: curlyparty_dev
     volumes:
-      - tts-data:/data/tts
+      - ./CurlyBot.DiscordBot/Data/tts-records:/data/tts
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -142,4 +145,3 @@ networks:
 
 volumes:
   rabbitmq-data:
-  tts-data:

@@ -59,7 +59,7 @@ scripts\compose-up.ps1            # основной оркестр
 или напрямую:
 
 ```bash
-docker compose up --build
+docker compose up --build --force-recreate
 ```
 
 Сервисы:
@@ -101,13 +101,31 @@ scripts\compose-up.ps1 -NoBuild            # без пересборки обр�
 scripts\compose-up.ps1 -Force              # без проверки портов
 ```
 
+Скрипт всегда запускает `up -d --build --force-recreate --remove-orphans`:
+образы пересобираются по актуальным исходникам, а контейнеры пересоздаются
+принудительно, даже если compose-файл и теги образов не менялись.
+
+Файл переменных выбирается по режиму: для основного — `env.env`, для
+дебагового — `debug.env`, а если его нет, то `env.env`. Можно указать явно:
+`scripts\compose-up.ps1 -Mode debug -EnvFile .\debug.env`.
+
 Эквивалентные команды без скрипта:
 
 ```bash
-docker compose -f docker-compose.yml up -d --build
-docker compose -f docker-compose.debug.yml up -d --build
+docker compose -f docker-compose.yml up -d --build --force-recreate --remove-orphans
+docker compose --env-file debug.env -f docker-compose.debug.yml up -d --build --force-recreate --remove-orphans
 docker compose -f docker-compose.debug.yml down --remove-orphans
 ```
+
+В дебаговом оркестре данные Discord-бота и кэш озвучки лежат не в именованных
+томах, а в локальных каталогах — их видно прямо в репозитории:
+
+| Каталог на хосте | Куда монтируется | Что содержит |
+| --- | --- | --- |
+| `CurlyBot.DiscordBot/Data` | `/app/Data` | `activity_mapping.json`, `tracking.json` |
+| `CurlyBot.DiscordBot/Data/tts-records` | `/data/tts` | WAV/OGG, сгенерированные SpeechService |
+
+Оба каталога в `.gitignore`, поэтому записи озвучки не попадут в коммиты.
 
 ## Подготовка внешнего PostgreSQL (дебаговый режим)
 
