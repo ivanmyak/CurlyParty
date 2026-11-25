@@ -28,6 +28,7 @@ public sealed class TelegramBotService(
         new() { Command = "linkstatus", Description = "Показать связки аккаунтов" },
         new() { Command = "linkuser", Description = "Связать пользователя (администратор)" },
         new() { Command = "unlinkuser", Description = "Разорвать связку пользователя (администратор)" },
+        new() { Command = "cancel", Description = "Закрыть меню параметров" },
         new() { Command = "help", Description = "Справка" }
     };
 
@@ -77,6 +78,10 @@ public sealed class TelegramBotService(
 
             if (update.CallbackQuery is { } callbackQuery)
             {
+                var talkDialog = scope.ServiceProvider.GetRequiredService<TelegramTalkDialogHandler>();
+                if (await talkDialog.HandleCallbackAsync(callbackQuery, cancellationToken))
+                    return;
+
                 var callbackHandler = scope.ServiceProvider.GetRequiredService<TelegramCallbackHandler>();
                 await callbackHandler.HandleAsync(callbackQuery, cancellationToken);
                 return;
@@ -88,11 +93,39 @@ public sealed class TelegramBotService(
             var sender = scope.ServiceProvider.GetRequiredService<TelegramSender>();
             await sender.EnsureAccountAsync(from, cancellationToken);
 
-            if (message.Text is { } text && text.StartsWith('/'))
+            var dialogs = scope.ServiceProvider.GetRequiredService<TalkDialogState>();
+            var talk = scope.ServiceProvider.GetRequiredService<TelegramTalkDialogHandler>();
+            var hadDraft = dialogs.Get(message.Chat.Id, from.Id) is not null;
+            var isCommand = message.Text is { } draftText && IsKnownCommand(draftText);
+
+            // Пока мастер открыт, текст (в том числе начинающийся с "/", но не команда)
+            // считается ответом на текущий шаг.
+            if (hadDraft && !isCommand && await talk.HandleMessageAsync(message, cancellationToken))
+                return;
+
+            if (message.Text is not { } text || !text.StartsWith('/'))
+                return;
+
+            var trimmed = text.TrimStart();
+            if (trimmed.Equals("/cancel", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("/cancel@", StringComparison.OrdinalIgnoreCase))
             {
-                var commandHandler = scope.ServiceProvider.GetRequiredService<TelegramCommandHandler>();
-                await commandHandler.HandleAsync(message, text, cancellationToken);
+                await talk.CancelAsync(message, cancellationToken);
+                return;
             }
+
+            // Любая другая команда завершает незавершённый сценарий.
+            if (hadDraft)
+                dialogs.Remove(message.Chat.Id, from.Id);
+
+            if (TelegramTalkDialogHandler.IsBareTalkCommand(text))
+            {
+                await talk.StartAsync(message, cancellationToken);
+                return;
+            }
+
+            var commandHandler = scope.ServiceProvider.GetRequiredService<TelegramCommandHandler>();
+            await commandHandler.HandleAsync(message, text, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -105,6 +138,16 @@ public sealed class TelegramBotService(
                 "Необработанная ошибка Telegram update {UpdateId}",
                 update.Id);
         }
+    }
+
+    private static bool IsKnownCommand(string text)
+    {
+        var name = text.TrimStart().Split(' ', 2)[0].ToLowerInvariant();
+        var atIndex = name.IndexOf('@');
+        if (atIndex > 0)
+            name = name[..atIndex];
+
+        return Commands.Any(x => string.Equals("/" + x.Command, name, StringComparison.Ordinal));
     }
 
     private Task HandleErrorAsync(

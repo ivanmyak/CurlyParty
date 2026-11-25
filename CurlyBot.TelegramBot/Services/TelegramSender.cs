@@ -23,11 +23,11 @@ public sealed class TelegramSender(
     /// <param name="text">Текст сообщения.</param>
     /// <param name="replyMarkup">Необязательная клавиатура с кнопками.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
-    /// <returns>Задача отправки.</returns>
-    public async Task SendTextAsync(
+    /// <returns>Отправленное сообщение.</returns>
+    public async Task<Message> SendTextAsync(
         long chatId,
         string text,
-        InlineKeyboardMarkup? replyMarkup = null,
+        ReplyMarkup? replyMarkup = null,
         CancellationToken cancellationToken = default)
         => await bot.SendMessage(
             chatId,
@@ -40,18 +40,18 @@ public sealed class TelegramSender(
     /// <param name="text">Текст сообщения.</param>
     /// <param name="replyMarkup">Необязательная клавиатура с кнопками.</param>
     /// <param name="cancellationToken">Токен отмены.</param>
-    /// <returns><see langword="true"/>, если сообщение доставлено.</returns>
-    public async Task<bool> TrySendTextAsync(
+    /// <returns>Отправленное сообщение или <see langword="null"/>, если чат недоступен.</returns>
+    public async Task<Message?> TrySendTextMessageAsync(
         long chatId,
         string text,
-        InlineKeyboardMarkup? replyMarkup = null,
+        ReplyMarkup? replyMarkup = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
-            await SendTextAsync(chatId, text, replyMarkup, cancellationToken);
+            var message = await SendTextAsync(chatId, text, replyMarkup, cancellationToken);
             await TouchAsync(chatId, cancellationToken);
-            return true;
+            return message;
         }
         catch (ApiRequestException ex) when (IsUnreachable(ex))
         {
@@ -60,9 +60,22 @@ public sealed class TelegramSender(
                 chatId,
                 ex.Message);
             await MarkBlockedAsync(chatId, cancellationToken);
-            return false;
+            return null;
         }
     }
+
+    /// <summary>Пытается отправить текст и отмечает чат недоступным при блокировке бота.</summary>
+    /// <param name="chatId">Идентификатор чата.</param>
+    /// <param name="text">Текст сообщения.</param>
+    /// <param name="replyMarkup">Необязательная клавиатура с кнопками.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns><see langword="true"/>, если сообщение доставлено.</returns>
+    public async Task<bool> TrySendTextAsync(
+        long chatId,
+        string text,
+        ReplyMarkup? replyMarkup = null,
+        CancellationToken cancellationToken = default)
+        => await TrySendTextMessageAsync(chatId, text, replyMarkup, cancellationToken) is not null;
 
     /// <summary>Отправляет голосовое сообщение, предпочитая OGG-файл.</summary>
     /// <param name="chatId">Идентификатор чата.</param>

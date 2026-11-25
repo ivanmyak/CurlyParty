@@ -321,7 +321,18 @@ namespace CurlyBot.DiscordBot.Commands
                 return (null, null, "Сервис пользователей временно недоступен. Попробуйте позже.");
             }
 
-            if (found.Accounts.Count == 0)
+            // Явно указанную платформу (telegram:, упоминание, ссылка) не подменяем
+            // предпочтением текущего сервиса.
+            var explicitPlatform = AccountQuery.DetectExplicitPlatform(query);
+            var candidates = explicitPlatform is null
+                ? found.Accounts
+                : found.Accounts
+                    .Where(x => string.Equals(x.Platform, explicitPlatform, StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+            var people = AccountPeople.Group(candidates);
+
+            if (people.Count == 0)
             {
                 var fallback = await ResolveGuildMemberAsync(query);
                 if (fallback.Error != null)
@@ -340,14 +351,14 @@ namespace CurlyBot.DiscordBot.Commands
                     $"Пользователь «{query}» не найден. Укажите @username из базы, упоминание Discord или @telegram-аккаунт.");
             }
 
-            if (found.Accounts.Count > 1)
+            if (people.Count > 1)
             {
-                var variants = string.Join(", ", found.Accounts.Select(x =>
-                    $"{Platforms.DisplayName(x.Platform)}: @{x.Username} ({x.DisplayName})"));
-                return (null, null, $"Найдено несколько аккаунтов: {variants}. Уточните платформу или укажите ID/ссылку.");
+                var variants = string.Join(", ", people.Select(person => AccountPeople.Describe(person)));
+                return (null, null, $"Найдено несколько человек: {variants}. Уточните платформу или укажите ID/ссылку.");
             }
 
-            var target = found.Accounts[0];
+            // Связанные аккаунты считаются одним человеком: отвечаем в текущий сервис.
+            var target = AccountPeople.Representative(people[0], explicitPlatform ?? Platforms.Discord);
             var profile = await _identity.GetProfileAsync(target.Platform, target.ExternalId)
                           ?? new ProfileDto(target, Array.Empty<AccountDto>());
 

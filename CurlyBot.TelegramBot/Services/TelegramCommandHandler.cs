@@ -54,7 +54,7 @@ public sealed class TelegramCommandHandler(
                     await HandleHelpAsync(message, cancellationToken);
                     break;
                 case "/talk":
-                    await HandleTalkAsync(message, args, cancellationToken);
+                    await ExecuteTalkAsync(message, args, cancellationToken);
                     break;
                 case "/linkme":
                     await HandleLinkMeAsync(message, args, cancellationToken);
@@ -100,7 +100,11 @@ public sealed class TelegramCommandHandler(
             "/talk <@username|ссылка|ID> <текст> [true|false] [true|false] — озвучить другому пользователю\n" +
             "/linkme <@username|ссылка|ID> — связать ваш Telegram с аккаунтом в другом сервисе\n" +
             "/unlinkme — разорвать связку\n" +
-            "/linkstatus — показать текущие связки\n\n" +
+            "/linkstatus — показать текущие связки\n" +
+            "/cancel — закрыть меню параметров\n\n" +
+            "Просто /talk (без текста) открывает меню: заполните параметры кнопками и обычными сообщениями,\n" +
+            "готовую команду бот отправит сам, когда будет задан текст.\n" +
+            "Получателя можно выбрать из списка зарегистрированных пользователей или найти по нику.\n\n" +
             "У /talk последние два флага: личное сообщение (true/false) и «только текущий сервис» (true/false).\n" +
             "Например: /talk @nick Привет false false — озвучить в Telegram и отправить копию в Discord.";
 
@@ -110,12 +114,13 @@ public sealed class TelegramCommandHandler(
     private Task HandleHelpAsync(Message message, CancellationToken cancellationToken)
         => HandleStartAsync(message, cancellationToken);
 
-    private async Task HandleTalkAsync(Message message, string args, CancellationToken cancellationToken)
+    /// <summary>Выполняет команду <c>/talk</c> с готовой строкой аргументов.</summary>
+    /// <param name="message">Сообщение-источник (задаёт чат и пользователя).</param>
+    /// <param name="args">Аргументы команды включая текст и флаги.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Задача озвучки и доставки.</returns>
+    public async Task ExecuteTalkAsync(Message message, string args, CancellationToken cancellationToken)
     {
-        var callerUser = message.From!;
-        var caller = await sender.EnsureAccountAsync(callerUser, cancellationToken);
-        var callerPlatformUser = sender.ToPlatformUser(callerUser);
-
         var (tokens, personal, currentOnly) = ParseFlags(args);
 
         if (tokens.Count == 0)
@@ -144,15 +149,72 @@ public sealed class TelegramCommandHandler(
         else if (tokens.Count > 1)
         {
             // Если первый токен — известный ник из базы, считаем его получателем.
+            // Связанные аккаунты Discord и Telegram — один человек, а не неоднозначность.
             var found = await identity.FindAccountsAsync(tokens[0], cancellationToken);
-            if (found.Accounts.Count == 1)
+            var people = AccountPeople.Group(found.Accounts);
+            if (people.Count == 1)
             {
-                target = found.Accounts[0];
+                target = AccountPeople.Representative(people[0], Platforms.Telegram);
                 tokens.RemoveAt(0);
             }
         }
 
-        var text = string.Join(" ", tokens).Trim();
+        await DeliverTalkAsync(
+            message,
+            target,
+            string.Join(" ", tokens).Trim(),
+            personal,
+            currentOnly,
+            cancellationToken);
+    }
+
+    /// <summary>
+    ///     Выполняет <c>/talk</c> с уже разобранными параметрами. Мастер параметров
+    ///     передаёт текст как есть, поэтому он не может быть принят за флаг или получателя.
+    /// </summary>
+    /// <param name="message">Сообщение-источник (задаёт чат и пользователя).</param>
+    /// <param name="targetReference">Ссылка на получателя или <see langword="null"/> для отправки себе.</param>
+    /// <param name="text">Текст озвучки как есть.</param>
+    /// <param name="personal">Признак личного сообщения.</param>
+    /// <param name="currentOnly">Признак отправки только в текущий сервис.</param>
+    /// <param name="cancellationToken">Токен отмены.</param>
+    /// <returns>Задача озвучки и доставки.</returns>
+    public async Task ExecuteTalkAsync(
+        Message message,
+        string? targetReference,
+        string text,
+        bool personal,
+        bool currentOnly,
+        CancellationToken cancellationToken)
+    {
+        AccountDto? target = null;
+        if (!string.IsNullOrWhiteSpace(targetReference))
+        {
+            var resolved = await ResolveSingleAsync(targetReference, cancellationToken);
+            if (resolved.Error is not null)
+            {
+                await ReplyAsync(message, resolved.Error, cancellationToken);
+                return;
+            }
+
+            target = resolved.Account;
+        }
+
+        await DeliverTalkAsync(message, target, text.Trim(), personal, currentOnly, cancellationToken);
+    }
+
+    private async Task DeliverTalkAsync(
+        Message message,
+        AccountDto? target,
+        string text,
+        bool personal,
+        bool currentOnly,
+        CancellationToken cancellationToken)
+    {
+        var callerUser = message.From!;
+        var caller = await sender.EnsureAccountAsync(callerUser, cancellationToken);
+        var callerPlatformUser = sender.ToPlatformUser(callerUser);
+
         if (text.Length == 0)
         {
             await ReplyAsync(message, "Текст пустой. Укажите, что озвучить.", cancellationToken);
@@ -522,17 +584,30 @@ public sealed class TelegramCommandHandler(
         CancellationToken cancellationToken)
     {
         var found = await identity.FindAccountsAsync(query, cancellationToken);
-        if (found.Accounts.Count == 0)
+
+        // Явно указанная платформа (discord:, tg:, ссылка) важнее предпочтения
+        // текущего сервиса: пользователь уже выбрал, кого именно имеет в виду.
+        var explicitPlatform = AccountQuery.DetectExplicitPlatform(query);
+        var candidates = explicitPlatform is null
+            ? found.Accounts
+            : found.Accounts
+                .Where(x => string.Equals(x.Platform, explicitPlatform, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+        // Связанные аккаунты разных платформ относятся к одному человеку.
+        var people = AccountPeople.Group(candidates);
+        if (people.Count == 0)
             return (null, $"Пользователь «{query}» не найден. Укажите @username из базы, ссылку или ID.");
 
-        if (found.Accounts.Count > 1)
+        if (people.Count > 1)
         {
-            var variants = string.Join(", ", found.Accounts.Select(x =>
-                $"{Platforms.DisplayName(x.Platform)}: @{x.Username} ({x.DisplayName})"));
-            return (null, $"Найдено несколько аккаунтов: {variants}. Уточните платформу или укажите ссылку/ID.");
+            var variants = string.Join(", ", people.Select(person => AccountPeople.Describe(person)));
+            return (null, $"Найдено несколько человек: {variants}. Уточните платформу или укажите ссылку/ID.");
         }
 
-        return (found.Accounts[0], null);
+        return (
+            AccountPeople.Representative(people[0], explicitPlatform ?? Platforms.Telegram),
+            null);
     }
 
     private async Task<bool> IsAdminAsync(Message message, CancellationToken cancellationToken)

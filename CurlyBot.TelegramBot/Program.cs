@@ -57,8 +57,10 @@ var builder = Host.CreateDefaultBuilder(args)
             RabbitTopology.DeliveryQueue(Platforms.Telegram),
             RabbitTopology.DeliveryRoutingKey(Platforms.Telegram));
 
+        services.AddSingleton<TalkDialogState>();
         services.AddScoped<TelegramSender>();
         services.AddScoped<TelegramCommandHandler>();
+        services.AddScoped<TelegramTalkDialogHandler>();
         services.AddScoped<TelegramCallbackHandler>();
         services.AddHostedService<TelegramBotService>();
     });

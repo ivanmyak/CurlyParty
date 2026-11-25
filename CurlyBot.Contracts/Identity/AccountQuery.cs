@@ -156,6 +156,15 @@ public static partial class AccountQuery
     }
 
     /// <summary>
+    ///     Строит однозначную ссылку на аккаунт в формате <c>платформа:внешний-id</c>,
+    ///     которую понимает <see cref="Parse"/>.
+    /// </summary>
+    /// <param name="account">Аккаунт, на который нужно сослаться.</param>
+    /// <returns>Ссылка вида <c>telegram:123456</c> или <c>discord:987654</c>.</returns>
+    public static string ToReference(AccountDto account)
+        => $"{Platforms.Normalize(account.Platform)}:{account.ExternalId}";
+
+    /// <summary>
     ///     Для /linkme: если платформа не указана явно, считаем, что пользователь
     ///     хочет связаться с аккаунтом на другой платформе.
     /// </summary>

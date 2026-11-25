@@ -31,7 +31,11 @@ public sealed class LinkService(
     public async Task<FindAccountsResponse> FindAsync(string query, CancellationToken cancellationToken)
     {
         var accounts = await FindAcrossPlatformsAsync(query, cancellationToken);
-        return new FindAccountsResponse(accounts.Select(x => x.ToDto()).ToArray(), accounts.Count > 1);
+        var dtos = accounts.Select(x => x.ToDto()).ToArray();
+
+        // Связанные аккаунты разных платформ — один человек, а не неоднозначность.
+        var people = AccountPeople.Group(dtos);
+        return new FindAccountsResponse(dtos, people.Count > 1);
     }
 
     /// <summary>Создаёт запрос на связку и уведомляет целевого пользователя.</summary>
