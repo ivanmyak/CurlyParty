@@ -59,7 +59,8 @@ public sealed class TelegramSender(
                 "Telegram не доставил сообщение в чат {ChatId}: {Error}",
                 chatId,
                 ex.Message);
-            await MarkBlockedAsync(chatId, cancellationToken);
+            if (IsBlockedByUser(ex))
+                await MarkBlockedAsync(chatId, cancellationToken);
             return null;
         }
     }
@@ -119,7 +120,8 @@ public sealed class TelegramSender(
                 "Telegram не доставил голосовое в чат {ChatId}: {Error}",
                 chatId,
                 ex.Message);
-            await MarkBlockedAsync(chatId, cancellationToken);
+            if (IsBlockedByUser(ex))
+                await MarkBlockedAsync(chatId, cancellationToken);
             return false;
         }
     }
@@ -211,6 +213,16 @@ public sealed class TelegramSender(
         => ex.ErrorCode == 403 ||
            (ex.ErrorCode == 400 &&
             ex.Message.Contains("chat not found", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    ///     Определяет, что пользователь именно заблокировал бота. Ошибка «бот не может
+    ///     начать переписку» тоже приходит с кодом 403, но блокировкой не является.
+    /// </summary>
+    /// <param name="ex">Исключение Telegram API.</param>
+    /// <returns><see langword="true"/>, если пользователь заблокировал бота.</returns>
+    private static bool IsBlockedByUser(ApiRequestException ex)
+        => ex.ErrorCode == 403 &&
+           ex.Message.Contains("blocked", StringComparison.OrdinalIgnoreCase);
 
     private static string? Truncate(string? value, int maxLength)
         => string.IsNullOrEmpty(value) || value.Length <= maxLength

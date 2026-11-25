@@ -104,7 +104,8 @@ public sealed class TelegramCommandHandler(
             "/cancel — закрыть меню параметров\n\n" +
             "Просто /talk (без текста) открывает меню: заполните параметры кнопками и обычными сообщениями,\n" +
             "готовую команду бот отправит сам, когда будет задан текст.\n" +
-            "Получателя можно выбрать из списка зарегистрированных пользователей или найти по нику.\n\n" +
+            "Получателя можно выбрать из списка зарегистрированных пользователей или найти по нику.\n" +
+            "Готовую озвучку бот всегда дублирует вам в личные сообщения (как в Discord).\n\n" +
             "У /talk последние два флага: личное сообщение (true/false) и «только текущий сервис» (true/false).\n" +
             "Например: /talk @nick Привет false false — озвучить в Telegram и отправить копию в Discord.";
 
@@ -298,8 +299,11 @@ public sealed class TelegramCommandHandler(
         if (!currentOnly)
         {
             var linked = profile.LinkedAccounts.FirstOrDefault(x =>
-                !string.Equals(x.Platform, effectiveTarget.Platform, StringComparison.OrdinalIgnoreCase) ||
-                x.ExternalId != effectiveTarget.ExternalId);
+                (!string.Equals(x.Platform, effectiveTarget.Platform, StringComparison.OrdinalIgnoreCase) ||
+                 x.ExternalId != effectiveTarget.ExternalId) &&
+                // Копию самому отправителю отправляем отдельно, ниже.
+                (!string.Equals(x.Platform, caller.Platform, StringComparison.OrdinalIgnoreCase) ||
+                 x.ExternalId != caller.ExternalId));
 
             if (linked is null)
             {
@@ -321,6 +325,28 @@ public sealed class TelegramCommandHandler(
                     ? $"Копия отправлена связанному аккаунту {linked.DisplayName} в {Platforms.DisplayName(linked.Platform)}."
                     : $"Не удалось отправить копию в {Platforms.DisplayName(linked.Platform)}.");
             }
+        }
+
+        // Как в Discord: готовую озвучку всегда дублируем отправителю в личные сообщения.
+        // Если озвучка и так ушла в его же чат (себе в приват или в личку), копия не нужна.
+        var primaryInCallerChat = isSelf &&
+                                  (personal || message.Chat.Type == ChatType.Private);
+        if (!primaryInCallerChat)
+        {
+            var senderCaption = isSelf
+                ? "Вы отправили сообщение самому себе:"
+                : $"Вы отправили пользователю {effectiveTarget.DisplayName} сообщение:";
+
+            var senderCopyDelivered = await sender.TrySendVoiceAsync(
+                callerUser.Id,
+                speechResult.WavPath,
+                speechResult.OggPath,
+                senderCaption,
+                cancellationToken);
+
+            messages.Add(senderCopyDelivered
+                ? "Копия озвучки отправлена вам в личные сообщения."
+                : "Не удалось отправить копию в личные сообщения: откройте чат с ботом и нажмите /start.");
         }
 
         await ReplyAsync(message, string.Join("\n", messages), cancellationToken);
